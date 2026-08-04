@@ -7,6 +7,7 @@ export type ToolId =
   | "align"
   | "booleanCut"
   | "relief"
+  | "smooth"
   | "compare";
 
 export interface MeshAssetState {

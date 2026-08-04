@@ -63,6 +63,30 @@ Ver [SECURITY.md](./SECURITY.md) para o detalhamento completo das 6 camadas (gua
 
 `manifold-3d` (WASM, saida garantidamente watertight) fica cotado para Fase 2 caso cortes booleanos em scans reais produzam malha nao-manifold com `three-bvh-csg`.
 
+### Ferramentas de pincel (alivio e suavizacao)
+
+Estilo exocad/Meshmixer — `pointerdown` comeca o traco, `pointermove` amostra/aplica, `pointerup`
+fecha e commita uma unica vez (nao a cada frame):
+
+- **Alivio (pincel)**: acumula pontos+normais do trajeto (`relief-brush.ts#buildStrokeBrush`,
+  distancia minima `STROKE_MIN_SAMPLE_DISTANCE` entre amostras), monta UMA malha-pincel (uniao de
+  esferas — barato, so entre primitivas) e roda o boolean caro contra a malha alvo so uma vez no
+  fim do traco.
+- **Suavizar (pincel)**: `smooth-brush.ts#applySmoothBrush` mexe direto no `BufferAttribute` de
+  posicao (media ponderada por distancia dos vertices no raio), sem CSG — aplicado ao vivo a cada
+  `pointermove`, sync com o servidor so uma vez no `pointerup`. **Risco de performance conhecido**:
+  busca O(n) em todos os vertices por chamada — ok pra malhas pequenas/teste, precisa de busca
+  espacial via `three-mesh-bvh` (`shapecast`) ou mover pra Web Worker antes de escalar pra scans
+  reais de scanner intraoral.
+
+### Atalhos de teclado (estilo exocad)
+
+`use-editor-shortcuts.ts` — uma letra por ferramenta, sempre disponivel (sem modo, ver layout
+Photoshop acima): `V` selecionar, `M` mover/transformar, `A` alinhar, `B` corte booleano, `R`
+alivio, `S` suavizar, `C` comparar. `G` agrupa a selecao, `Delete`/`Backspace` apaga, `F` enquadra
+tudo, `Esc` volta pra selecao/cancela sessao de alinhamento em andamento, `Ctrl+D` duplica,
+`Ctrl+Z` desfaz. Ignorado quando o foco esta num campo de texto/select.
+
 ### Engine imperativa, nao React declarativo
 
 `src/client/engine/JAG3DViewportEngine.ts` possui a `Scene`/camera/renderer/controls/raycaster BVH/registro de meshes, com API imperativa (`loadMesh`, `selectAsset`, `applyTransform`, `executeBooleanCut`, `undo`, `redo`). `Viewport.tsx` monta a engine uma vez; React nunca re-renderiza a arvore Three.js. Motivo: editor CAD com pilha de undo/redo baseada em comandos e gizmo arrastado a 60-120Hz — o reconciler do `@react-three/fiber` e pensado para cena-como-funcao-de-estado-React, o oposto do que se precisa aqui.

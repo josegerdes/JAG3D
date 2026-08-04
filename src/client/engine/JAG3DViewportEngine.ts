@@ -112,10 +112,27 @@ export class JAG3DViewportEngine {
 
   dispose(): void {
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
-    this.transformControls.dispose();
+    this.disposeTransformControls();
     this.orbitControls.dispose();
     for (const entry of this.meshes.values()) this.disposeMeshEntry(entry);
     this.renderer.dispose();
+  }
+
+  /**
+   * `TransformControls.dispose()` no three@0.169 chama `this.traverse(...)`, mas a classe base
+   * `Controls` (da qual `TransformControls` herda desde o refactor pra `Controls`/`EventDispatcher`)
+   * nao e um `Object3D` e nao tem `.traverse` — `dispose()` real quebra com
+   * `TypeError: this.traverse is not a function`. Workaround: reproduz manualmente o que o metodo
+   * deveria fazer (desconectar listeners + descartar geometria/material do helper de verdade,
+   * que e Object3D). Revisitar/remover se uma versao futura do three corrigir isso.
+   */
+  private disposeTransformControls(): void {
+    this.transformControls.disconnect();
+    this.transformControls.getHelper().traverse((child) => {
+      const disposable = child as unknown as { geometry?: { dispose(): void }; material?: { dispose(): void } };
+      disposable.geometry?.dispose();
+      disposable.material?.dispose();
+    });
   }
 
   // ---- Carregamento de malha ----

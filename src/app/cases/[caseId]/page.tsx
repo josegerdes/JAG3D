@@ -12,9 +12,11 @@ import { JAG3DViewportEngine, readRigidTransform } from "@/client/engine/JAG3DVi
 import { CompareController } from "@/client/engine/compare-controller";
 import { AlignmentSession } from "@/client/engine/tools/alignment-session";
 import { performBooleanOp } from "@/client/engine/tools/boolean-cut";
-import { createReliefBrush } from "@/client/engine/tools/relief-brush";
+import { createReliefBrush, buildStrokeBrush, STROKE_MIN_SAMPLE_DISTANCE } from "@/client/engine/tools/relief-brush";
+import { applySmoothBrush } from "@/client/engine/tools/smooth-brush";
 import { licenseManager } from "@/client/license/license-manager";
 import { useEditorStore } from "@/client/state/editor-store";
+import { useEditorShortcuts } from "@/client/hooks/use-editor-shortcuts";
 import { TopToolbar } from "@/components/editor/top-toolbar";
 import { MeshGroupsPanel } from "@/components/editor/mesh-groups-panel";
 import { PropertiesPanel } from "@/components/editor/properties-panel";
@@ -51,6 +53,10 @@ export default function CaseEditorPage() {
   const compareRef = useRef<CompareController | null>(null);
   const alignSessionRef = useRef(new AlignmentSession());
   const pendingSourcePointRef = useRef<Vector3 | null>(null);
+  const strokeActiveRef = useRef(false);
+  const strokePointsRef = useRef<Vector3[]>([]);
+  const strokeNormalsRef = useRef<Vector3[]>([]);
+  const smoothTouchedRef = useRef(false);
 
   const [caseName, setCaseName] = useState("");
   const [ready, setReady] = useState(false);
@@ -184,7 +190,7 @@ export default function CaseEditorPage() {
     };
   }
 
-  async function handleCanvasClick(event: React.PointerEvent<HTMLCanvasElement>) {
+  async function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     const engine = engineRef.current;
     if (!engine) return;
     const { x, y } = pointerToNdc(event);
@@ -199,8 +205,128 @@ export default function CaseEditorPage() {
       return;
     }
 
-    if (activeTool === "relief") {
-      await handleReliefClick(x, y);
+    if (activeTool === "relief" || activeTool === "smooth") {
+      beginStroke(event, x, y);
+    }
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (!strokeActiveRef.current) return;
+    const { x, y } = pointerToNdc(event);
+    continueStroke(x, y);
+  }
+
+  async function handlePointerUp() {
+    if (!strokeActiveRef.current) return;
+    await endStroke();
+  }
+
+  /** Pincel de alivio/suavizacao: `pointerdown` comeca o traco (trava o orbit control, igual o
+   *  gizmo faz), `pointermove` amostra/aplica, `pointerup` fecha e commita UMA vez so — ver
+   *  `relief-brush.ts`/`smooth-brush.ts` pro motivo de nao commitar a cada frame. */
+  function beginStroke(event: React.PointerEvent<HTMLCanvasElement>, x: number, y: number): void {
+    const engine = engineRef.current;
+    const selection = useEditorStore.getState().selectedAssetIds;
+    const assetId = selection[0];
+    if (!engine || !assetId) {
+      toast.error("Selecione a malha que vai receber o pincel.");
+      return;
+    }
+    const mesh = engine.getMesh(assetId);
+    if (!mesh) return;
+    const hit = raycastHit(engine, x, y, [mesh]);
+    if (!hit) return;
+
+    strokeActiveRef.current = true;
+    smoothTouchedRef.current = false;
+    strokePointsRef.current = [];
+    strokeNormalsRef.current = [];
+    engine.orbitControls.enabled = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    sampleStroke(hit.point, hit.normal, mesh);
+  }
+
+  function continueStroke(x: number, y: number): void {
+    const engine = engineRef.current;
+    const selection = useEditorStore.getState().selectedAssetIds;
+    const assetId = selection[0];
+    const mesh = engine && assetId ? engine.getMesh(assetId) : undefined;
+    if (!engine || !mesh) return;
+    const hit = raycastHit(engine, x, y, [mesh]);
+    if (!hit) return;
+    sampleStroke(hit.point, hit.normal, mesh);
+  }
+
+  function sampleStroke(worldPoint: Vector3, worldNormal: Vector3, mesh: Mesh): void {
+    if (activeTool === "smooth") {
+      const local = mesh.worldToLocal(worldPoint.clone());
+      const applied = applySmoothBrush(mesh, local, reliefRadius, 0.35);
+      if (applied) {
+        smoothTouchedRef.current = true;
+        mesh.geometry.computeVertexNormals();
+      }
+      return;
+    }
+
+    const points = strokePointsRef.current;
+    const last = points[points.length - 1];
+    if (last && last.distanceTo(worldPoint) < STROKE_MIN_SAMPLE_DISTANCE) return;
+    points.push(worldPoint.clone());
+    strokeNormalsRef.current.push(worldNormal.clone());
+  }
+
+  async function endStroke(): Promise<void> {
+    strokeActiveRef.current = false;
+    const engine = engineRef.current;
+    if (engine) engine.orbitControls.enabled = true;
+
+    const selection = useEditorStore.getState().selectedAssetIds;
+    const assetId = selection[0];
+    const asset = assetId ? useEditorStore.getState().assets[assetId] : null;
+    const mesh = engine && assetId ? engine.getMesh(assetId) : undefined;
+    if (!engine || !assetId || !asset || !mesh) return;
+
+    if (!(await engine.assertLicensed())) {
+      if (activeTool === "smooth") await engine.reloadMeshGeometry(assetId); // desfaz a suavizacao local nao commitada
+      strokePointsRef.current = [];
+      return;
+    }
+
+    let resultMesh: Mesh;
+    if (activeTool === "smooth") {
+      if (!smoothTouchedRef.current) return;
+      resultMesh = mesh;
+    } else {
+      if (strokePointsRef.current.length === 0) return;
+      const brush = buildStrokeBrush(strokePointsRef.current, strokeNormalsRef.current, reliefRadius, "raise");
+      resultMesh = performBooleanOp(mesh, brush, "union");
+      brush.geometry.dispose();
+    }
+
+    try {
+      const staged = await stageGeometryResult(assetId, asset.format, resultMesh);
+      const commit = await commitOperation(caseId, activeTool === "smooth" ? "relief" : "relief", [
+        {
+          assetId,
+          expectedSyncVersion: asset.syncVersion,
+          geometryReplacement: {
+            storageKey: staged.storageKey,
+            checksumSha256: staged.checksumSha256,
+            sizeBytes: staged.sizeBytes,
+            triangleCount: staged.triangleCount,
+          },
+        },
+      ]);
+      await engine.reloadMeshGeometry(assetId);
+      useEditorStore.getState().upsertAsset({ ...asset, syncVersion: commit.syncVersions[assetId] ?? asset.syncVersion + 1 });
+      toast.success(activeTool === "smooth" ? "Suavizacao aplicada." : "Alivio aplicado.");
+    } catch (error) {
+      await engine.reloadMeshGeometry(assetId);
+      handleCommitError(error);
+    } finally {
+      strokePointsRef.current = [];
+      strokeNormalsRef.current = [];
     }
   }
 
@@ -233,53 +359,6 @@ export default function CaseEditorPage() {
     alignSessionRef.current.addPointPair(pendingSourcePointRef.current, targetPoint);
     pendingSourcePointRef.current = null;
     setAlignPairCount(alignSessionRef.current.pairCount);
-  }
-
-  async function handleReliefClick(x: number, y: number) {
-    const engine = engineRef.current;
-    const selection = useEditorStore.getState().selectedAssetIds;
-    const assetId = selection[0];
-    if (!engine || !assetId) {
-      toast.error("Selecione a malha que vai receber o alivio.");
-      return;
-    }
-    if (!(await engine.assertLicensed())) return;
-
-    const targetMesh = engine.getMesh(assetId);
-    if (!targetMesh) return;
-
-    const hit = raycastHit(engine, x, y, [targetMesh]);
-    if (!hit) {
-      toast.error("Clique sobre a malha selecionada.");
-      return;
-    }
-
-    const asset = useEditorStore.getState().assets[assetId];
-    if (!asset) return;
-
-    const brush = createReliefBrush(hit.point, hit.normal, reliefRadius, "raise");
-    const result = performBooleanOp(targetMesh, brush, "union");
-
-    try {
-      const staged = await stageGeometryResult(assetId, asset.format, result);
-      const commit = await commitOperation(caseId, "relief", [
-        {
-          assetId,
-          expectedSyncVersion: asset.syncVersion,
-          geometryReplacement: {
-            storageKey: staged.storageKey,
-            checksumSha256: staged.checksumSha256,
-            sizeBytes: staged.sizeBytes,
-            triangleCount: staged.triangleCount,
-          },
-        },
-      ]);
-      await engine.reloadMeshGeometry(assetId);
-      useEditorStore.getState().upsertAsset({ ...asset, syncVersion: commit.syncVersions[assetId] ?? asset.syncVersion + 1 });
-      toast.success("Alivio aplicado.");
-    } catch (error) {
-      handleCommitError(error);
-    }
   }
 
   async function handleBooleanCut() {
@@ -451,6 +530,69 @@ export default function CaseEditorPage() {
     void syncVersions;
   }
 
+  async function handleDelete() {
+    const engine = engineRef.current;
+    const selection = useEditorStore.getState().selectedAssetIds;
+    if (!engine || selection.length === 0) return;
+    for (const assetId of selection) {
+      try {
+        await api.delete(`/api/mesh-assets/${assetId}`);
+        engine.unloadMeshAsset(assetId);
+        useEditorStore.getState().removeAsset(assetId);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Falha ao apagar malha");
+      }
+    }
+  }
+
+  function handleFrameAll() {
+    engineRef.current?.frameAll();
+  }
+
+  function handleEscape() {
+    pendingSourcePointRef.current = null;
+    alignSessionRef.current.reset();
+    setAlignPairCount(0);
+    useEditorStore.getState().setActiveTool("select");
+  }
+
+  useEditorShortcuts({
+    onUndo: handleUndo,
+    onGroup: handleGroup,
+    onDuplicate: async () => {
+      const [assetId] = useEditorStore.getState().selectedAssetIds;
+      const engine = engineRef.current;
+      if (!assetId || !engine || !(await engine.assertLicensed())) return;
+      try {
+        const { asset } = await api.post<{ asset: RemoteAsset }>(`/api/mesh-assets/${assetId}/duplicate`);
+        useEditorStore.getState().upsertAsset({
+          id: asset.id,
+          caseId: asset.caseId,
+          groupId: asset.groupId,
+          name: asset.name,
+          format: asset.format,
+          triangleCount: asset.triangleCount,
+          linkedGroupId: asset.linkedGroupId,
+          syncVersion: asset.syncVersion,
+          visible: true,
+          locked: false,
+        });
+        await engine.loadMeshAsset({
+          assetId: asset.id,
+          format: asset.format,
+          transform: asset.transform,
+          linkedGroupId: asset.linkedGroupId,
+        });
+        toast.success(`"${asset.name}" duplicada.`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Falha ao duplicar");
+      }
+    },
+    onDelete: handleDelete,
+    onFrameAll: handleFrameAll,
+    onEscape: handleEscape,
+  });
+
   function handleCommitError(error: unknown) {
     if (error instanceof Error && error.message.includes("alterada por outra sessao")) {
       useEditorStore.getState().setSyncStatus("conflict");
@@ -524,7 +666,13 @@ export default function CaseEditorPage() {
       <div className="flex flex-1 overflow-hidden">
         <MeshGroupsPanel onToggleVisible={handleToggleVisible} onToggleLock={handleToggleLock} onToggleLink={handleToggleLink} />
         <div ref={containerRef} className="relative flex-1 bg-black">
-          <canvas ref={canvasRef} className="h-full w-full touch-none" onPointerDown={handleCanvasClick} />
+          <canvas
+            ref={canvasRef}
+            className="h-full w-full touch-none"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+          />
         </div>
         <PropertiesPanel
           reliefRadius={reliefRadius}
