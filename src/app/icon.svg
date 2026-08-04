@@ -1,0 +1,41 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#0a0e17"/>
+    </linearGradient>
+    <linearGradient id="f1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7aa8ff"/>
+      <stop offset="1" stop-color="#3b6bf0"/>
+    </linearGradient>
+    <linearGradient id="f2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5c8cf5"/>
+      <stop offset="1" stop-color="#2f56d6"/>
+    </linearGradient>
+    <linearGradient id="f3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#345fdb"/>
+      <stop offset="1" stop-color="#1e3faa"/>
+    </linearGradient>
+    <linearGradient id="f4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#264aba"/>
+      <stop offset="1" stop-color="#152f85"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+
+  <!-- dente low-poly: casca faceada estilo malha 3D -->
+  <g stroke="#0a0e17" stroke-width="1" stroke-linejoin="round">
+    <polygon points="32,10 20,22 32,24" fill="url(#f1)"/>
+    <polygon points="32,10 32,24 44,22" fill="url(#f2)"/>
+    <polygon points="20,22 17,34 32,24" fill="url(#f2)"/>
+    <polygon points="44,22 32,24 47,34" fill="url(#f3)"/>
+    <polygon points="17,34 24,49 32,24" fill="url(#f3)"/>
+    <polygon points="47,34 32,24 40,49" fill="url(#f4)"/>
+    <polygon points="32,24 24,49 40,49" fill="url(#f2)"/>
+    <polygon points="24,49 29,56 32,44" fill="url(#f4)"/>
+    <polygon points="40,49 32,44 35,56" fill="url(#f3)"/>
+    <polygon points="32,44 29,56 35,56" fill="url(#f2)"/>
+    <polygon points="29,56 32,54 35,56" fill="url(#f4)"/>
+  </g>
+</svg>
