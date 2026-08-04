@@ -11,13 +11,12 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# NEXT_PUBLIC_* sao inlinados no bundle client durante `next build`, que roda
-# AQUI dentro do build da imagem — nao em runtime. Se uma var NEXT_PUBLIC_*
-# for setada so no `environment:` do compose (sem passar por ARG/ENV antes
-# deste RUN), ela fica sempre vazia no bundle publicado, sem erro nenhum.
-ARG NEXT_PUBLIC_LICENSE_TOKEN_PUBLIC_KEY
-ENV NEXT_PUBLIC_LICENSE_TOKEN_PUBLIC_KEY=${NEXT_PUBLIC_LICENSE_TOKEN_PUBLIC_KEY}
-
+# Nota geral (nao usada agora, mas vale lembrar pra qualquer var NEXT_PUBLIC_* futura): elas sao
+# inlinadas no bundle client durante `next build`, que roda AQUI dentro do build da imagem — nao em
+# runtime. Setar so no `environment:` do compose (sem passar por ARG/ENV antes deste RUN) deixa a
+# var sempre vazia no bundle publicado, sem erro nenhum. A chave publica de licenca especificamente
+# NAO usa mais esse mecanismo — o cliente busca ela em runtime via /api/license/public-key, sem
+# depender de build arg (ver src/client/license/verify-capability-token.ts).
 RUN npm run build
 
 FROM node:20-alpine AS runner

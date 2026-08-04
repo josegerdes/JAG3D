@@ -9,7 +9,7 @@ A fronteira de protecao real deste sistema **nao** e o codigo do editor rodando 
 ## Camadas de licenciamento (defesa em profundidade)
 
 1. **Guard de rota**: `withApiHandler(handler, { requireLicense: true })` checa `LicenseDoc.status === "active" && expiresAt > now` em toda rota de mutacao.
-2. **Capability token de curta duracao**: assinado com par de chaves **ES256** dedicado (`LICENSE_TOKEN_PRIVATE_KEY`/`LICENSE_TOKEN_PUBLIC_KEY`, diferente do `JWT_SECRET` da sessao), TTL ~15min, verificavel no navegador via `jose` contra a chave publica (`NEXT_PUBLIC_LICENSE_TOKEN_PUBLIC_KEY`). A chave privada nunca sai do servidor.
+2. **Capability token de curta duracao**: assinado com par de chaves **ES256** dedicado (`LICENSE_TOKEN_PRIVATE_KEY`/`LICENSE_TOKEN_PUBLIC_KEY`, diferente do `JWT_SECRET` da sessao), TTL ~15min, verificavel no navegador via `jose` contra a chave publica buscada em runtime (`GET /api/license/public-key`, cacheada em memoria — deliberadamente NAO inlinada no bundle via `NEXT_PUBLIC_*`, pra nao depender de build ARG do Docker). A chave privada nunca sai do servidor.
 3. **Heartbeat periodico** (`/api/license/heartbeat`, ~10min): renova o capability token enquanto a licenca segue ativa; se foi revogada/expirou, simplesmente para de emitir token novo.
 4. **Trava dura em save/export**: sempre recheca a licenca no servidor, ao vivo, independente do token local em cache. Este e o backstop comercial de verdade.
 5. **Propagacao de revogacao**: revogar no admin flipa `LicenseDoc.status` na hora; uso local de ferramenta pode continuar ate o token expirar (~15min), mas save/export bloqueia na proxima tentativa.
