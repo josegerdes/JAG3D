@@ -4,11 +4,15 @@ import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, ApiClientError } from "@/client/api/client";
 
 interface PublicCase {
@@ -26,6 +30,8 @@ interface SessionSummary {
   hasActiveLicense: boolean;
 }
 
+const STATUS_LABEL: Record<PublicCase["status"], string> = { draft: "Rascunho", active: "Ativo", archived: "Arquivado" };
+
 export function CasesDashboard({ session, initialCases }: { session: SessionSummary; initialCases: PublicCase[] }) {
   const router = useRouter();
   const [cases, setCases] = useState(initialCases);
@@ -35,6 +41,12 @@ export function CasesDashboard({ session, initialCases }: { session: SessionSumm
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  const [editingCase, setEditingCase] = useState<PublicCase | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPatientRef, setEditPatientRef] = useState("");
+  const [editStatus, setEditStatus] = useState<PublicCase["status"]>("draft");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
@@ -76,6 +88,48 @@ export function CasesDashboard({ session, initialCases }: { session: SessionSumm
       toast.error(err instanceof ApiClientError ? err.message : "Falha ao importar projeto");
     } finally {
       setImporting(false);
+    }
+  }
+
+  function openEdit(event: React.MouseEvent, caseDoc: PublicCase) {
+    event.preventDefault();
+    event.stopPropagation();
+    setEditingCase(caseDoc);
+    setEditName(caseDoc.name);
+    setEditPatientRef(caseDoc.patientRef ?? "");
+    setEditStatus(caseDoc.status);
+  }
+
+  async function handleSaveEdit(event: FormEvent) {
+    event.preventDefault();
+    if (!editingCase) return;
+    setSavingEdit(true);
+    try {
+      const { case: updated } = await api.patch<{ case: PublicCase }>(`/api/cases/${editingCase.id}`, {
+        name: editName,
+        patientRef: editPatientRef || null,
+        status: editStatus,
+      });
+      setCases((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setEditingCase(null);
+      toast.success("Caso atualizado.");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "Falha ao salvar caso");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleDelete(event: React.MouseEvent, caseDoc: PublicCase) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!window.confirm(`Apagar o caso "${caseDoc.name}"? Essa acao nao pode ser desfeita.`)) return;
+    try {
+      await api.delete(`/api/cases/${caseDoc.id}`);
+      setCases((prev) => prev.filter((c) => c.id !== caseDoc.id));
+      toast.success("Caso apagado.");
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "Falha ao apagar caso");
     }
   }
 
@@ -141,9 +195,23 @@ export function CasesDashboard({ session, initialCases }: { session: SessionSumm
           <Link key={caseDoc.id} href={`/cases/${caseDoc.id}`}>
             <Card className="h-full transition-colors hover:border-primary">
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  {caseDoc.name}
-                  <Badge variant="secondary">{caseDoc.status}</Badge>
+                <CardTitle className="flex items-center justify-between gap-2">
+                  <span className="truncate">{caseDoc.name}</span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Badge variant="secondary">{STATUS_LABEL[caseDoc.status]}</Badge>
+                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => openEdit(e, caseDoc)} title="Editar">
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-destructive hover:text-destructive"
+                      onClick={(e) => handleDelete(e, caseDoc)}
+                      title="Apagar"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
@@ -154,6 +222,42 @@ export function CasesDashboard({ session, initialCases }: { session: SessionSumm
         ))}
         {cases.length === 0 && <p className="text-sm text-muted-foreground">Nenhum caso ainda.</p>}
       </div>
+
+      <Dialog open={Boolean(editingCase)} onOpenChange={(open) => !open && setEditingCase(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar caso</DialogTitle>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={handleSaveEdit}>
+            <div className="space-y-1.5">
+              <Label>Nome</Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Referencia</Label>
+              <Input value={editPatientRef} onChange={(e) => setEditPatientRef(e.target.value)} placeholder="Codigo/identificador" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={editStatus} onValueChange={(v) => setEditStatus(v as PublicCase["status"])}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Rascunho</SelectItem>
+                  <SelectItem value="active">Ativo</SelectItem>
+                  <SelectItem value="archived">Arquivado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="submit" disabled={savingEdit}>
+                {savingEdit ? "Salvando..." : "Salvar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
