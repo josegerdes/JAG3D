@@ -76,6 +76,11 @@ export default function CaseEditorPage() {
     const engine = new JAG3DViewportEngine(canvasRef.current);
     engineRef.current = engine;
     compareRef.current = new CompareController(engine);
+    // Hook de debug temporario — permite inspecionar cena/camera/malhas pelo console em producao
+    // sem precisar expor nada permanentemente. Remover depois de confirmar o bug da tela preta.
+    if (typeof window !== "undefined") {
+      (window as unknown as { __jag3d?: JAG3DViewportEngine }).__jag3d = engine;
+    }
 
     const unsubscribeSelection = engine.onSelectionChange((ids) => useEditorStore.getState().select(ids));
     const unsubscribeLicense = engine.onLicenseBlocked(() => {
