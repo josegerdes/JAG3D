@@ -1,10 +1,29 @@
-export default function HomePage() {
+import { getSession } from "@/server/auth/session";
+import { connectDB } from "@/server/db/client";
+import * as casesService from "@/server/modules/cases/service";
+import { CasesDashboard } from "@/components/cases/cases-dashboard";
+
+export default async function HomePage() {
+  // O middleware (Edge) so garante que existe cookie — a sessao de verdade (JWT valido + usuario
+  // ativo) e resolvida aqui, em Server Component com acesso ao Mongo. `session` nunca deveria ser
+  // null nesta rota (middleware ja redireciona pra /login sem cookie), mas o TS exige o checkout.
+  const session = await getSession();
+  if (!session) {
+    return null;
+  }
+
+  const db = await connectDB();
+  const cases = await casesService.listMyCases(db, session);
+
   return (
-    <main className="flex min-h-screen items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold">JAG3D</h1>
-        <p className="mt-2 text-muted-foreground">Fase 1 em construcao.</p>
-      </div>
-    </main>
+    <CasesDashboard
+      session={{
+        name: session.name,
+        email: session.email,
+        isSuperAdmin: session.isSuperAdmin,
+        hasActiveLicense: session.hasActiveLicense,
+      }}
+      initialCases={cases}
+    />
   );
 }

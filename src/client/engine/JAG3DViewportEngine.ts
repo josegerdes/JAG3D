@@ -144,6 +144,19 @@ export class JAG3DViewportEngine {
     });
   }
 
+  /** Troca so a geometria de uma malha ja carregada (resultado de corte/alivio confirmado pelo
+   *  servidor) — mantem o mesmo `Mesh`/transform/selecao, so os bytes mudam. */
+  async reloadMeshGeometry(assetId: string): Promise<void> {
+    const entry = this.meshes.get(assetId);
+    if (!entry) return;
+    const buffer = await fetchRawBytes(`/api/mesh-assets/${assetId}/raw`);
+    const geometry = parseMeshBuffer(entry.format, buffer);
+    geometry.computeVertexNormals();
+    geometry.computeBoundsTree?.();
+    entry.mesh.geometry.dispose();
+    entry.mesh.geometry = geometry;
+  }
+
   unloadMeshAsset(assetId: string): void {
     const entry = this.meshes.get(assetId);
     if (!entry) return;
@@ -183,6 +196,15 @@ export class JAG3DViewportEngine {
   onSelectionChange(listener: SelectionChangeListener): () => void {
     this.selectionListeners.add(listener);
     return () => this.selectionListeners.delete(listener);
+  }
+
+  /** Raycast puro (sem efeito colateral na selecao) — usado pelas ferramentas de alinhamento e
+   *  alivio pra pegar o ponto/normal clicado sobre malhas especificas. */
+  raycastAtPointer(ndcX: number, ndcY: number, targets: Mesh[]) {
+    this.pointerNdc.set(ndcX, ndcY);
+    this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+    const [hit] = this.raycaster.intersectObjects(targets, false);
+    return hit ?? null;
   }
 
   pickAtPointer(ndcX: number, ndcY: number, additive: boolean): void {

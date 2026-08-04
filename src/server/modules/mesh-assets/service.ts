@@ -164,4 +164,23 @@ export async function exportMeshAsset(db: Db, session: Session, assetId: string)
   return { asset, buffer };
 }
 
+/**
+ * Salva bytes de uma geometria RESULTANTE de uma ferramenta (corte booleano, alivio) computada
+ * client-side, SEM criar um `MeshAssetDoc` — so grava o arquivo e devolve os metadados que
+ * `commitOperation()` precisa pro `geometryReplacement` de um asset ja existente. Formato vem do
+ * asset alvo (nao inferido de novo): o resultado de um corte numa malha STL continua STL.
+ */
+export async function stageGeometryBlob(db: Db, session: Session, assetId: string, buffer: Buffer) {
+  if (buffer.byteLength > MAX_MESH_UPLOAD_BYTES) {
+    throw new ApiError(413, "Arquivo excede o tamanho maximo permitido (300MB)");
+  }
+  const target = await getOwnedAsset(db, session, assetId);
+  const checksumSha256 = checksumOf(buffer);
+  const storageKey = storageKeyFor(checksumSha256, target.format);
+  await saveMeshFile(storageKey, buffer);
+
+  const { triangleCount } = sniffMeshFormat(buffer, `blob.${target.format}`);
+  return { storageKey, checksumSha256, sizeBytes: buffer.byteLength, triangleCount, format: target.format };
+}
+
 export { deleteMeshFile };
