@@ -1,5 +1,7 @@
 import { SignJWT, importPKCS8, importSPKI, jwtVerify } from "jose";
 
+import { normalizePemEnv } from "@/lib/pem";
+
 /**
  * Token de capacidade de licenca — deliberadamente SEPARADO do JWT de sessao
  * (que usa HS256 com um segredo simetrico so verificavel no servidor). Este
@@ -20,13 +22,13 @@ export interface CapabilityTokenPayload {
 async function getPrivateKey() {
   const pem = process.env.LICENSE_TOKEN_PRIVATE_KEY;
   if (!pem) throw new Error("Defina a variavel de ambiente LICENSE_TOKEN_PRIVATE_KEY (.env)");
-  return importPKCS8(pem.replace(/\\n/g, "\n"), ALG);
+  return importPKCS8(normalizePemEnv(pem), ALG);
 }
 
 async function getPublicKey() {
   const pem = process.env.LICENSE_TOKEN_PUBLIC_KEY;
   if (!pem) throw new Error("Defina a variavel de ambiente LICENSE_TOKEN_PUBLIC_KEY (.env)");
-  return importSPKI(pem.replace(/\\n/g, "\n"), ALG);
+  return importSPKI(normalizePemEnv(pem), ALG);
 }
 
 export async function signCapabilityToken(payload: CapabilityTokenPayload): Promise<string> {

@@ -68,8 +68,14 @@ export async function revokeLicense(db: Db, licenseId: string, input: RevokeLice
 
 /**
  * Emite um capability token novo se o usuario tiver licenca ativa agora — chamado no login e no
- * heartbeat periodico. Retorna null (nunca lanca) se nao houver licenca ativa: a ausencia de token
- * novo e o proprio sinal de "licenca nao ativa" para o cliente, sem expor detalhes por que.
+ * heartbeat periodico. Retorna null se nao houver licenca ativa (a ausencia de token novo e o
+ * proprio sinal de "licenca nao ativa" para o cliente).
+ *
+ * `signCapabilityToken` pode falhar por motivo de CONFIGURACAO (LICENSE_TOKEN_PRIVATE_KEY ausente
+ * ou mal colada no painel de deploy — quebra facil ao copiar uma chave PEM multi-linha pra um campo
+ * de env var) — sem o try/catch aqui, isso vira um 500 generico que o cliente le como "sem licenca",
+ * escondendo o erro de configuracao real por tras de um sintoma que parece problema de negocio.
+ * Relancado como ApiError com mensagem propria pra aparecer diferenciado nos logs do servidor.
  */
 export async function issueCapabilityTokenIfLicensed(db: Db, userId: string): Promise<string | null> {
   const userObjectId = ObjectId.createFromHexString(userId);
@@ -77,5 +83,13 @@ export async function issueCapabilityTokenIfLicensed(db: Db, userId: string): Pr
   if (!license) return null;
 
   await licensesRepo.touchHeartbeat(db, license._id);
-  return signCapabilityToken({ licenseId: license._id.toHexString(), userId });
+  try {
+    return await signCapabilityToken({ licenseId: license._id.toHexString(), userId });
+  } catch (error) {
+    console.error(
+      "[license] Falha ao assinar capability token — verifique LICENSE_TOKEN_PRIVATE_KEY (formato PKCS8, newlines preservadas):",
+      error
+    );
+    throw new ApiError(500, "Configuracao de licenciamento invalida no servidor (LICENSE_TOKEN_PRIVATE_KEY)");
+  }
 }

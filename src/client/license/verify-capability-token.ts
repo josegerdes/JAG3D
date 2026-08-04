@@ -1,5 +1,7 @@
 import { importSPKI, jwtVerify } from "jose";
 
+import { normalizePemEnv } from "@/lib/pem";
+
 /**
  * Verificacao do capability token DENTRO DO NAVEGADOR — usa `jose` (isomorfico)
  * contra a chave publica embutida no bundle (`NEXT_PUBLIC_LICENSE_TOKEN_PUBLIC_KEY`).
@@ -17,7 +19,7 @@ async function getPublicKey() {
   if (cachedKey) return cachedKey;
   const pem = process.env.NEXT_PUBLIC_LICENSE_TOKEN_PUBLIC_KEY;
   if (!pem) throw new Error("NEXT_PUBLIC_LICENSE_TOKEN_PUBLIC_KEY nao configurada no build");
-  cachedKey = await importSPKI(pem.replace(/\\n/g, "\n"), ALG);
+  cachedKey = await importSPKI(normalizePemEnv(pem), ALG);
   return cachedKey;
 }
 
