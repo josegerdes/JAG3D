@@ -19,15 +19,26 @@ let pendingFetch: Promise<Awaited<ReturnType<typeof importSPKI>>> | null = null;
 async function getPublicKey() {
   if (cachedKey) return cachedKey;
   if (!pendingFetch) {
-    pendingFetch = (async () => {
-      const response = await fetch("/api/license/public-key");
-      if (!response.ok) throw new Error("Falha ao buscar chave publica de licenca do servidor");
-      const { publicKey } = (await response.json()) as { publicKey: string };
-      cachedKey = await importSPKI(publicKey, ALG);
-      return cachedKey;
-    })();
+    pendingFetch = fetchAndImportPublicKey().catch((error) => {
+      // Sem isso, uma falha transitoria (rede instavel, servidor reiniciando) na PRIMEIRA busca
+      // deixava `pendingFetch` travado numa promise rejeitada pra sempre — nenhuma chamada seguinte
+      // tentava de novo, mesmo depois do servidor voltar. Reseta pra permitir retry na proxima vez.
+      pendingFetch = null;
+      throw error;
+    });
   }
   return pendingFetch;
+}
+
+async function fetchAndImportPublicKey() {
+  const response = await fetch("/api/license/public-key");
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(`Falha ao buscar chave publica de licenca (HTTP ${response.status}): ${body.message ?? "sem detalhe"}`);
+  }
+  const { publicKey } = (await response.json()) as { publicKey: string };
+  cachedKey = await importSPKI(publicKey, ALG);
+  return cachedKey;
 }
 
 export interface CapabilityTokenClaims {
@@ -41,7 +52,11 @@ export async function verifyCapabilityTokenClient(token: string): Promise<Capabi
     const key = await getPublicKey();
     const { payload } = await jwtVerify(token, key, { algorithms: [ALG] });
     return payload as unknown as CapabilityTokenClaims;
-  } catch {
+  } catch (error) {
+    // Log (nao silencioso) — sem isso e impossivel diferenciar "chave publica mal configurada no
+    // servidor" de "token realmente expirado" de dentro do navegador, o que ja causou pelo menos
+    // duas rodadas de debug remoto sem visibilidade real do erro.
+    console.error("[license] Falha ao verificar capability token no navegador:", error);
     return null;
   }
 }
