@@ -5,16 +5,19 @@ import {
   DirectionalLight,
   GridHelper,
   Mesh,
+  MOUSE,
   PerspectiveCamera,
   Quaternion,
   Raycaster,
   Scene,
+  TOUCH,
   Vector2,
   Vector3,
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 
 import { MeshFormat, RigidTransform } from "@/server/db/schema";
@@ -52,8 +55,11 @@ export class JAG3DViewportEngine {
   readonly renderer: WebGLRenderer;
   readonly orbitControls: OrbitControls;
   readonly transformControls: TransformControls;
+  readonly viewHelper: ViewHelper;
+  private readonly grid: GridHelper;
   private readonly raycaster = new Raycaster();
   private readonly pointerNdc = new Vector2();
+  private previousTickTime = 0;
 
   private readonly meshes = new Map<string, EngineMeshEntry>();
   private selection: string[] = [];
@@ -77,11 +83,17 @@ export class JAG3DViewportEngine {
     const key = new DirectionalLight(0xffffff, 1.2);
     key.position.set(100, 200, 150);
     this.scene.add(key);
-    const grid = new GridHelper(400, 40, 0x2a2f3a, 0x1c1f27);
-    this.scene.add(grid);
+    this.grid = new GridHelper(400, 40, 0x2a2f3a, 0x1c1f27);
+    this.scene.add(this.grid);
 
     this.orbitControls = new OrbitControls(this.camera, canvas);
     this.orbitControls.enableDamping = true;
+    // Convencao CAD (exocad e afins): botao direito gira, meio arrasta (pan), esquerdo fica livre
+    // pras ferramentas do editor (selecionar, pintar pincel, gizmo de transform) — sem isso o
+    // OrbitControls e o nosso proprio handler de pointerdown no botao esquerdo brigavam pelo mesmo
+    // clique. Scroll continua zoom, sem precisar de configuracao extra.
+    this.orbitControls.mouseButtons = { LEFT: null, MIDDLE: MOUSE.PAN, RIGHT: MOUSE.ROTATE };
+    this.orbitControls.touches = { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN };
 
     this.transformControls = new TransformControls(this.camera, canvas);
     this.transformControls.addEventListener("dragging-changed", (event) => {
@@ -89,15 +101,43 @@ export class JAG3DViewportEngine {
     });
     this.scene.add(this.transformControls.getHelper?.() ?? (this.transformControls as unknown as never));
 
+    // Gizmo de orientacao no canto inferior direito (estilo exocad/Fusion/Blender) — clicar num
+    // eixo anima a camera pra aquela vista. `center` precisa ficar sincronizado com o alvo do
+    // orbit control pra a animacao focar no ponto certo (ver `tick()`).
+    this.viewHelper = new ViewHelper(this.camera, canvas);
+
     this.tick = this.tick.bind(this);
     this.tick();
   }
 
-  private tick(): void {
-    this.orbitControls.update();
+  private tick(time = 0): void {
+    const delta = this.previousTickTime ? (time - this.previousTickTime) / 1000 : 0;
+    this.previousTickTime = time;
+
+    this.viewHelper.center.copy(this.orbitControls.target);
+    if (this.viewHelper.animating) this.viewHelper.update(delta);
+    else this.orbitControls.update();
+
     if (this.renderOverride) this.renderOverride();
     else this.renderer.render(this.scene, this.camera);
+    this.viewHelper.render(this.renderer);
+
     this.animationFrameId = requestAnimationFrame(this.tick);
+  }
+
+  /** Retorna true se o clique caiu em cima do gizmo de orientacao (e ja foi tratado) — chamado
+   *  ANTES da logica normal de ferramenta no `pointerdown` do canvas, pra nao picar/pintar por
+   *  engano quando o usuario so queria mudar a vista. */
+  handleViewHelperClick(event: PointerEvent | MouseEvent): boolean {
+    return this.viewHelper.handleClick(event);
+  }
+
+  setGridVisible(visible: boolean): void {
+    this.grid.visible = visible;
+  }
+
+  isGridVisible(): boolean {
+    return this.grid.visible;
   }
 
   setRenderOverride(fn: (() => void) | null): void {
@@ -114,6 +154,7 @@ export class JAG3DViewportEngine {
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
     this.disposeTransformControls();
     this.orbitControls.dispose();
+    this.viewHelper.dispose();
     for (const entry of this.meshes.values()) this.disposeMeshEntry(entry);
     this.renderer.dispose();
   }

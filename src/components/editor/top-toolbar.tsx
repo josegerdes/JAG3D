@@ -1,6 +1,6 @@
 "use client";
 
-import { Redo2, Undo2 } from "lucide-react";
+import { Grid3x3, Redo2, Undo2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,19 @@ const TOOLS: { id: ToolId; label: string; shortcut: string; requiresSelectionMin
  * Toolbar sempre visivel, estilo Photoshop — nenhuma ferramenta fica escondida atras de um fluxo
  * fechado. O que muda por contexto de selecao e so o habilitado/desabilitado (ver ARCHITECTURE.md).
  */
-export function TopToolbar({ onUndo, onGroup, onUpload }: { onUndo: () => void; onGroup: () => void; onUpload: () => void }) {
+export function TopToolbar({
+  onUndo,
+  onGroup,
+  onUpload,
+  gridVisible,
+  onToggleGrid,
+}: {
+  onUndo: () => void;
+  onGroup: () => void;
+  onUpload: () => void;
+  gridVisible: boolean;
+  onToggleGrid: () => void;
+}) {
   const { activeTool, setActiveTool, selectedAssetIds } = useEditorStore();
 
   return (
@@ -51,6 +63,14 @@ export function TopToolbar({ onUndo, onGroup, onUpload }: { onUndo: () => void; 
       </Button>
       <Button size="sm" variant="ghost" disabled title="Redo ainda nao implementado na Fase 1">
         <Redo2 className="mr-1 h-3.5 w-3.5" /> Refazer
+      </Button>
+      <Button
+        size="sm"
+        variant={gridVisible ? "default" : "ghost"}
+        onClick={onToggleGrid}
+        title="Mostrar/ocultar grade"
+      >
+        <Grid3x3 className="h-3.5 w-3.5" />
       </Button>
       <div className="flex-1" />
       <Button size="sm" onClick={onUpload}>

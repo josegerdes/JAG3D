@@ -61,6 +61,7 @@ export default function CaseEditorPage() {
   const [caseName, setCaseName] = useState("");
   const [ready, setReady] = useState(false);
   const [reliefRadius, setReliefRadius] = useState(2);
+  const [gridVisible, setGridVisible] = useState(true);
   const [alignPairCount, setAlignPairCount] = useState(0);
   const [compareBeforeId, setCompareBeforeId] = useState<string | null>(null);
   const [compareAfterId, setCompareAfterId] = useState<string | null>(null);
@@ -193,6 +194,10 @@ export default function CaseEditorPage() {
   async function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     const engine = engineRef.current;
     if (!engine) return;
+    // Clique no gizmo de orientacao (canto inferior direito) muda a vista — nunca interpretado
+    // como acao de ferramenta (selecionar/pintar/etc).
+    if (engine.handleViewHelperClick(event.nativeEvent)) return;
+
     const { x, y } = pointerToNdc(event);
 
     if (activeTool === "select" || activeTool === "transform" || activeTool === "duplicate" || activeTool === "booleanCut") {
@@ -668,7 +673,17 @@ export default function CaseEditorPage() {
         </button>
         <span className="font-medium">{caseName || "Carregando..."}</span>
       </div>
-      <TopToolbar onUndo={handleUndo} onGroup={handleGroup} onUpload={handleUpload} />
+      <TopToolbar
+        onUndo={handleUndo}
+        onGroup={handleGroup}
+        onUpload={handleUpload}
+        gridVisible={gridVisible}
+        onToggleGrid={() => {
+          const next = !gridVisible;
+          setGridVisible(next);
+          engineRef.current?.setGridVisible(next);
+        }}
+      />
       <div className="flex flex-1 overflow-hidden">
         <MeshGroupsPanel onToggleVisible={handleToggleVisible} onToggleLock={handleToggleLock} onToggleLink={handleToggleLink} />
         <div ref={containerRef} className="relative flex-1 bg-black">

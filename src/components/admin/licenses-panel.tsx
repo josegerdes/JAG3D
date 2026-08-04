@@ -1,13 +1,15 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { api } from "@/client/api/client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { api, ApiClientError } from "@/client/api/client";
 import type { PublicUser } from "@/components/admin/users-panel";
 
 export interface PublicLicense {
@@ -21,6 +23,15 @@ export interface PublicLicense {
   revokedReason: string | null;
 }
 
+/** Planos fixos — Fase 1 nao tem tiering de verdade (self-service vem depois), mas um campo de
+ *  texto livre pra "plano" nao fazia sentido nenhum pro admin preencher — ver ARCHITECTURE.md. */
+const PLAN_OPTIONS = [
+  { value: "trial", label: "Trial" },
+  { value: "standard", label: "Standard" },
+  { value: "pro", label: "Pro" },
+  { value: "admin", label: "Administrador" },
+];
+
 export function LicensesPanel({ initialLicenses, users }: { initialLicenses: PublicLicense[]; users: PublicUser[] }) {
   const [licenses, setLicenses] = useState(initialLicenses);
   const [userId, setUserId] = useState("");
@@ -29,6 +40,9 @@ export function LicensesPanel({ initialLicenses, users }: { initialLicenses: Pub
   const [busy, setBusy] = useState(false);
 
   const userName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
+  const usersWithoutActiveLicense = users.filter(
+    (u) => !licenses.some((l) => l.userId === u.id && l.status === "active")
+  );
 
   async function handleIssue(event: FormEvent) {
     event.preventDefault();
@@ -38,22 +52,36 @@ export function LicensesPanel({ initialLicenses, users }: { initialLicenses: Pub
       const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
       const { license } = await api.post<{ license: PublicLicense }>("/api/licenses", { userId, plan, expiresAt });
       setLicenses((prev) => [license, ...prev]);
+      setUserId("");
+      toast.success("Licenca emitida.");
+    } catch (error) {
+      toast.error(error instanceof ApiClientError ? error.message : "Falha ao emitir licenca");
     } finally {
       setBusy(false);
     }
   }
 
   async function handleRevoke(id: string) {
-    const { license } = await api.post<{ license: PublicLicense }>(`/api/licenses/${id}/revoke`, {
-      reason: "Revogado pelo administrador",
-    });
-    setLicenses((prev) => prev.map((l) => (l.id === id ? license : l)));
+    try {
+      const { license } = await api.post<{ license: PublicLicense }>(`/api/licenses/${id}/revoke`, {
+        reason: "Revogado pelo administrador",
+      });
+      setLicenses((prev) => prev.map((l) => (l.id === id ? license : l)));
+      toast.success("Licenca revogada.");
+    } catch (error) {
+      toast.error(error instanceof ApiClientError ? error.message : "Falha ao revogar licenca");
+    }
   }
 
   async function handleExtend(id: string) {
-    const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-    const { license } = await api.post<{ license: PublicLicense }>(`/api/licenses/${id}/extend`, { expiresAt });
-    setLicenses((prev) => prev.map((l) => (l.id === id ? license : l)));
+    try {
+      const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+      const { license } = await api.post<{ license: PublicLicense }>(`/api/licenses/${id}/extend`, { expiresAt });
+      setLicenses((prev) => prev.map((l) => (l.id === id ? license : l)));
+      toast.success("Licenca estendida por mais 1 ano.");
+    } catch (error) {
+      toast.error(error instanceof ApiClientError ? error.message : "Falha ao estender licenca");
+    }
   }
 
   return (
@@ -66,23 +94,38 @@ export function LicensesPanel({ initialLicenses, users }: { initialLicenses: Pub
           <form className="flex flex-wrap items-end gap-3" onSubmit={handleIssue}>
             <div className="min-w-[220px] space-y-1.5">
               <Label>Usuario</Label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-                required
-              >
-                <option value="">Selecione...</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.email})
-                  </option>
-                ))}
-              </select>
+              <Select value={userId} onValueChange={setUserId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {usersWithoutActiveLicense.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name} ({u.email})
+                    </SelectItem>
+                  ))}
+                  {usersWithoutActiveLicense.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      Todos os usuarios ja tem licenca ativa.
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="w-32 space-y-1.5">
+            <div className="w-40 space-y-1.5">
               <Label>Plano</Label>
-              <Input value={plan} onChange={(e) => setPlan(e.target.value)} />
+              <Select value={plan} onValueChange={setPlan}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PLAN_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="w-28 space-y-1.5">
               <Label>Dias</Label>
@@ -102,7 +145,8 @@ export function LicensesPanel({ initialLicenses, users }: { initialLicenses: Pub
               <div>
                 <p className="text-sm font-medium">{userName(license.userId)}</p>
                 <p className="text-xs text-muted-foreground">
-                  Plano {license.plan} · expira em {new Date(license.expiresAt).toLocaleDateString("pt-BR")}
+                  Plano {PLAN_OPTIONS.find((p) => p.value === license.plan)?.label ?? license.plan} · expira em{" "}
+                  {new Date(license.expiresAt).toLocaleDateString("pt-BR")}
                 </p>
               </div>
               <div className="flex items-center gap-2">

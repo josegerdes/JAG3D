@@ -7,6 +7,7 @@ export async function register() {
     const { startJobWorker } = await import("@/server/jobs/worker");
     // Registra os backfills por efeito colateral (cada modulo se auto-registra ao ser importado).
     await import("@/server/db/backfills/seed-license-sweep-job");
+    await import("@/server/db/backfills/ensure-admin-license");
 
     try {
       const db = await connectDB();
