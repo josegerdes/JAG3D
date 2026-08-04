@@ -113,13 +113,27 @@ export default function CaseEditorPage() {
       );
       useEditorStore.getState().setGroups(groups);
 
+      // Uma malha falhando (ex: arquivo perdido no armazenamento) nao pode travar as outras — sem
+      // isso, um unico 404/500 no meio da lista impedia TODAS as malhas seguintes de carregar,
+      // mesmo as que estavam perfeitamente saudaveis.
+      const failedAssets: string[] = [];
       for (const asset of assets) {
-        await engine.loadMeshAsset({
-          assetId: asset.id,
-          format: asset.format,
-          transform: asset.transform,
-          linkedGroupId: asset.linkedGroupId,
-        });
+        try {
+          await engine.loadMeshAsset({
+            assetId: asset.id,
+            format: asset.format,
+            transform: asset.transform,
+            linkedGroupId: asset.linkedGroupId,
+          });
+        } catch (error) {
+          console.error(`[mesh] Falha ao carregar "${asset.name}":`, error);
+          failedAssets.push(asset.name);
+        }
+      }
+      if (failedAssets.length > 0) {
+        toast.error(
+          `Falha ao carregar ${failedAssets.length} malha(s): ${failedAssets.join(", ")}. Provavelmente o arquivo foi perdido — reenvie.`
+        );
       }
       engine.frameAll();
       setReady(true);

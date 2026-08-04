@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 
 import { MeshFormat } from "@/server/db/schema";
+import { ApiError } from "@/server/auth/guards";
 
 /**
  * Arquivos de malha vivem num volume Docker (`mesh-data:/data/meshes` em producao,
@@ -28,8 +29,25 @@ export async function saveMeshFile(storageKey: string, buffer: Buffer): Promise<
   await fs.writeFile(fullPath, buffer);
 }
 
+/**
+ * Se o arquivo nao existir no disco (ENOENT), converte pra um 404 claro em vez de deixar o 500
+ * generico do `withApiHandler`. Causa mais comum disso na pratica: `MESH_STORAGE_DIR` nao esta
+ * num volume Docker PERSISTENTE de verdade — cada redeploy recria o filesystem do container do
+ * zero, apagando arquivos ja enviados enquanto o registro no Mongo continua existindo (base
+ * separada, persistente) — ver ARCHITECTURE.md/docker-compose.yml (`mesh-data:/data/meshes`).
+ */
 export async function readMeshFile(storageKey: string): Promise<Buffer> {
-  return fs.readFile(path.join(storageRoot(), storageKey));
+  try {
+    return await fs.readFile(path.join(storageRoot(), storageKey));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new ApiError(
+        404,
+        "Arquivo de malha nao encontrado no armazenamento (provavelmente perdido num redeploy sem volume persistente — reenvie a malha)"
+      );
+    }
+    throw error;
+  }
 }
 
 export async function deleteMeshFile(storageKey: string): Promise<void> {
