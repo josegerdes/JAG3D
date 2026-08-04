@@ -62,6 +62,7 @@ export default function CaseEditorPage() {
   const [ready, setReady] = useState(false);
   const [reliefRadius, setReliefRadius] = useState(2);
   const [gridVisible, setGridVisible] = useState(true);
+  const [downloadingProject, setDownloadingProject] = useState(false);
   const [alignPairCount, setAlignPairCount] = useState(0);
   const [compareBeforeId, setCompareBeforeId] = useState<string | null>(null);
   const [compareAfterId, setCompareAfterId] = useState<string | null>(null);
@@ -474,6 +475,31 @@ export default function CaseEditorPage() {
     }
   }
 
+  async function handleDownloadProject() {
+    setDownloadingProject(true);
+    try {
+      const response = await fetch(`/api/cases/${caseId}/export-zip`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message ?? "Falha ao gerar o .zip do projeto");
+      }
+      const disposition = response.headers.get("content-disposition") ?? "";
+      const filenameMatch = disposition.match(/filename="([^"]+)"/);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filenameMatch?.[1] ?? `jag3d-${caseId}.zip`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("Projeto baixado — esse .zip e um backup completo, restauravel a qualquer momento.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao baixar projeto");
+    } finally {
+      setDownloadingProject(false);
+    }
+  }
+
   function handleUpload() {
     const input = document.createElement("input");
     input.type = "file";
@@ -697,6 +723,8 @@ export default function CaseEditorPage() {
           setGridVisible(next);
           engineRef.current?.setGridVisible(next);
         }}
+        onDownloadProject={handleDownloadProject}
+        downloadingProject={downloadingProject}
       />
       <div className="flex flex-1 overflow-hidden">
         <MeshGroupsPanel onToggleVisible={handleToggleVisible} onToggleLock={handleToggleLock} onToggleLink={handleToggleLink} />

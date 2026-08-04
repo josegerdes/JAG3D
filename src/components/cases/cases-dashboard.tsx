@@ -1,14 +1,15 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { api } from "@/client/api/client";
+import { api, ApiClientError } from "@/client/api/client";
 
 interface PublicCase {
   id: string;
@@ -31,7 +32,9 @@ export function CasesDashboard({ session, initialCases }: { session: SessionSumm
   const [name, setName] = useState("");
   const [patientRef, setPatientRef] = useState("");
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
@@ -58,6 +61,24 @@ export function CasesDashboard({ session, initialCases }: { session: SessionSumm
     router.refresh();
   }
 
+  async function handleImportZip(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setImporting(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const { case: created } = await api.postForm<{ case: PublicCase }>("/api/cases/import-zip", form);
+      toast.success(`Projeto "${created.name}" importado.`);
+      router.push(`/cases/${created.id}`);
+    } catch (err) {
+      toast.error(err instanceof ApiClientError ? err.message : "Falha ao importar projeto");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <header className="mb-8 flex items-center justify-between">
@@ -73,6 +94,10 @@ export function CasesDashboard({ session, initialCases }: { session: SessionSumm
           ) : (
             <Badge variant="destructive">Sem licenca ativa</Badge>
           )}
+          <input ref={importInputRef} type="file" accept=".zip" className="hidden" onChange={handleImportZip} />
+          <Button variant="outline" size="sm" disabled={importing} onClick={() => importInputRef.current?.click()}>
+            {importing ? "Importando..." : "Abrir projeto (.zip)"}
+          </Button>
           {session.isSuperAdmin && (
             <Button variant="outline" size="sm" asChild>
               <Link href="/admin">Administracao</Link>

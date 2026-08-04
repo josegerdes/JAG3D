@@ -15,6 +15,12 @@ Editor de malha 3D (odontologico + harmonizacao facial) rodando no navegador, co
 
 Acesso a dados de caso/malha usa `requireCaseOwnership(session, caseDoc)` — `caseDoc.ownerId === session.userId` — em vez do `requireUnitAccess` do projeto irmao. Roles servem principalmente para o lado administrativo (emitir licenca, gerenciar usuarios, suporte com override `cases.manageAny`).
 
+## Backup/portabilidade — export/import de caso em .zip
+
+`server/modules/cases/archive.ts` — o caso inteiro (metadados + TODOS os bytes de malha reais, nao so referencias) empacotado num `.zip` baixavel a qualquer momento (`GET /api/cases/:id/export-zip`) e restauravel como um caso novo a partir do zip (`POST /api/cases/import-zip`). Formato: `manifest.json` (relacoes entre assets/grupos/comparacoes por INDICE, nao por ObjectId — IDs sao sempre regenerados na importacao, nunca reaproveitados) + `meshes/<indice>.<formato>` com os bytes crus.
+
+**Por que existe**: decisao explicita do dono do produto apos um incidente real (arquivos de malha perdidos do volume do servidor entre redeploys) — em vez de depender so do armazenamento do servidor continuar intacto pra sempre, o usuario pode manter seu proprio backup completo e restauravel fora do servidor a qualquer momento. Nao substitui o armazenamento do servidor (o volume Docker `mesh-data` continua sendo a fonte de verdade do dia a dia), e um mecanismo de resiliencia adicional.
+
 ## Modulos de servidor
 
 Convencao: `server/modules/<nome>/{repository.ts,service.ts,types.ts}` + `app/api/<nome>/route.ts`, tudo atras de `withApiHandler(handler, {permission?, requireSuperAdmin?, requireLicense?})` (`server/http/with-api-handler.ts`), que centraliza autenticacao/autorizacao/licenca e o formato de erro.

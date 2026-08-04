@@ -27,12 +27,16 @@ export function TopToolbar({
   onUpload,
   gridVisible,
   onToggleGrid,
+  onDownloadProject,
+  downloadingProject,
 }: {
   onUndo: () => void;
   onGroup: () => void;
   onUpload: () => void;
   gridVisible: boolean;
   onToggleGrid: () => void;
+  onDownloadProject: () => void;
+  downloadingProject: boolean;
 }) {
   const { activeTool, setActiveTool, selectedAssetIds } = useEditorStore();
 
@@ -73,6 +77,15 @@ export function TopToolbar({
         <Grid3x3 className="h-3.5 w-3.5" />
       </Button>
       <div className="flex-1" />
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={downloadingProject}
+        onClick={onDownloadProject}
+        title="Baixa um .zip com o caso inteiro (metadados + arquivos de malha reais) — backup restauravel a qualquer momento"
+      >
+        {downloadingProject ? "Preparando..." : "Baixar projeto (.zip)"}
+      </Button>
       <Button size="sm" onClick={onUpload}>
         Enviar malha
       </Button>
