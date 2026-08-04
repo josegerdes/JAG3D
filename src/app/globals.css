@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Editor 3D roda melhor em tema escuro por padrao (contraste de viewport,
+  igual a toda ferramenta CAD/DCC) — a raiz ja nasce ".dark", nao depende de
+  preferencia do SO.
+*/
+@layer base {
+  :root {
+    --background: 222 25% 8%;
+    --foreground: 220 20% 92%;
+
+    --card: 222 24% 11%;
+    --card-foreground: 220 20% 92%;
+
+    --popover: 222 24% 11%;
+    --popover-foreground: 220 20% 92%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 25% 8%;
+
+    --secondary: 222 20% 16%;
+    --secondary-foreground: 220 20% 92%;
+
+    --muted: 222 20% 16%;
+    --muted-foreground: 220 12% 65%;
+
+    --accent: 222 20% 16%;
+    --accent-foreground: 220 20% 92%;
+
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 60% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 85% 55%;
+    --warning-foreground: 0 0% 10%;
+
+    --border: 222 20% 18%;
+    --input: 222 20% 18%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;
+
+    /* Tokens do shell do editor (toolbar/paineis) — mais escuro que --card, igual a barra de
+       ferramentas do Photoshop, pra dar hierarquia visual em relacao ao viewport 3D central. */
+    --panel: 222 28% 6%;
+    --panel-foreground: 220 20% 88%;
+    --panel-border: 222 22% 15%;
+
+    --chart-1: 217 91% 60%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 38 85% 55%;
+    --chart-4: 280 65% 65%;
+    --chart-5: 0 63% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

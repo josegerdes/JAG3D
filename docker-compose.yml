@@ -1,0 +1,69 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    # --replSet e obrigatorio: commitOperation() usa Mongo transactions
+    # (multi-documento, atomicas) para o mecanismo anti-dessincronizacao de
+    # malhas — transactions nao existem num Mongo standalone. Ver
+    # ARCHITECTURE.md, secao "Anti-dessincronizacao".
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?defina MONGO_ROOT_PASSWORD no .env}
+    healthcheck:
+      test: >
+        mongosh --quiet -u ${MONGO_ROOT_USER:-root} -p ${MONGO_ROOT_PASSWORD}
+        --authenticationDatabase admin --eval "db.adminCommand('ping')"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Job de inicializacao de execucao unica (nao um 3o processo permanente):
+  # aguarda o mongo subir saudavel e chama rs.initiate() se o replica set
+  # ainda nao existir. Idempotente — seguro de rodar em todo `docker compose up`.
+  mongo-init:
+    image: mongo:7
+    restart: "no"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        mongosh --quiet --host mongo:27017 -u ${MONGO_ROOT_USER:-root} -p ${MONGO_ROOT_PASSWORD}
+        --authenticationDatabase admin --eval "
+        try { rs.status(); print('rs0 ja iniciado'); }
+        catch (e) { rs.initiate({_id:'rs0', members:[{_id:0, host:'mongo:27017'}]}); print('rs0 iniciado'); }
+        "
+
+  app:
+    build:
+      context: .
+      args:
+        PORT: ${PORT:-3000}
+        NEXT_PUBLIC_LICENSE_TOKEN_PUBLIC_KEY: ${NEXT_PUBLIC_LICENSE_TOKEN_PUBLIC_KEY:-}
+    restart: unless-stopped
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      - mesh-data:/data/meshes
+    environment:
+      PORT: ${PORT:-3000}
+      DATABASE_URL: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin&replicaSet=rs0
+      DB: ${DB:-jag3d}
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+      APP_SECRET: ${APP_SECRET:?defina APP_SECRET no .env}
+      LICENSE_TOKEN_PRIVATE_KEY: ${LICENSE_TOKEN_PRIVATE_KEY:?defina LICENSE_TOKEN_PRIVATE_KEY no .env}
+      LICENSE_TOKEN_PUBLIC_KEY: ${LICENSE_TOKEN_PUBLIC_KEY:?defina LICENSE_TOKEN_PUBLIC_KEY no .env}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@jag3d.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      MESH_STORAGE_DIR: /data/meshes
+
+volumes:
+  mongo-data:
+  mesh-data:
