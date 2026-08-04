@@ -1,26 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { AUTH_COOKIE_NAME } from "@/server/auth/constants";
+import { verifyAuthTokenEdge } from "@/server/auth/jwt-edge";
 
 const PUBLIC_PATHS = ["/login"];
 
 /**
- * Redirect leve em edge runtime, baseado so na presenca do cookie (o Edge
- * runtime nao tem acesso ao driver do Mongo pra validar a sessao de verdade).
- * A validacao forte (assinatura do JWT + usuario ativo + permissoes + licenca)
- * acontece em cada Server Component/rota via `getSession()`.
+ * Redirect em edge runtime — verifica a ASSINATURA do JWT via `jose` (isomorfico, ao contrario do
+ * `jsonwebtoken` Node-only usado no resto do app), mas nao busca o usuario no Mongo (isso continua
+ * em `getSession()`, Server Component/rota). Um cookie presente porem invalido/expirado (secret
+ * trocado, token velho) e tratado como "sem sessao" e LIMPO aqui — sem isso, um cookie invalido
+ * causava loop: middleware achava que tinha sessao (so checava presenca) e bloqueava /login, mas a
+ * pagina via a sessao como null e nao redirecionava de volta, travando o usuario numa pagina em branco.
  */
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const hasSession = Boolean(request.cookies.get(AUTH_COOKIE_NAME)?.value);
+  const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
   const isPublicPath = PUBLIC_PATHS.some((path) => pathname.startsWith(path));
+  const session = token ? await verifyAuthTokenEdge(token) : null;
 
-  if (!hasSession && !isPublicPath) {
-    const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+  if (!session && !isPublicPath) {
+    const response = NextResponse.redirect(new URL("/login", request.url));
+    if (token) response.cookies.set(AUTH_COOKIE_NAME, "", { path: "/", maxAge: 0 });
+    return response;
   }
 
-  if (hasSession && isPublicPath) {
+  if (session && isPublicPath) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

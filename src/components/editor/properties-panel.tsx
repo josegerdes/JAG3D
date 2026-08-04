@@ -36,7 +36,17 @@ export function PropertiesPanel({
   compareActive,
   onStopCompare,
 }: Props) {
-  const { activeTool, selectedAssetIds, assets, compareMode, setCompareMode, splitRatio, setSplitRatio } = useEditorStore();
+  const {
+    activeTool,
+    selectedAssetIds,
+    assets,
+    compareMode,
+    setCompareMode,
+    splitRatio,
+    setSplitRatio,
+    reliefDirection,
+    setReliefDirection,
+  } = useEditorStore();
   const selected = selectedAssetIds.map((id) => assets[id]).filter((a): a is NonNullable<typeof a> => Boolean(a));
   const assetOptions = Object.values(assets);
 
@@ -61,7 +71,23 @@ export function PropertiesPanel({
         <div className="mt-4 space-y-2 border-t border-panel-border pt-3">
           <p className="text-xs font-medium">Alivio — raio ({reliefRadius.toFixed(1)}mm)</p>
           <RangeSlider min={0.5} max={10} step={0.1} value={reliefRadius} onChange={onReliefRadiusChange} />
-          <p className="text-xs text-muted-foreground">Clique num ponto da malha selecionada pra aplicar.</p>
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant={reliefDirection === "raise" ? "default" : "outline"}
+              onClick={() => setReliefDirection("raise")}
+            >
+              Levantar
+            </Button>
+            <Button
+              size="sm"
+              variant={reliefDirection === "indent" ? "default" : "outline"}
+              onClick={() => setReliefDirection("indent")}
+            >
+              Rebaixar
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Arraste sobre a malha selecionada pra pintar o alivio.</p>
         </div>
       )}
 

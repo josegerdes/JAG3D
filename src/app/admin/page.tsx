@@ -9,7 +9,7 @@ import { AdminDashboard } from "@/components/admin/admin-dashboard";
 
 export default async function AdminPage() {
   const session = await getSession();
-  if (!session) return null;
+  if (!session) redirect("/login");
   if (!session.isSuperAdmin) redirect("/");
 
   const db = await connectDB();

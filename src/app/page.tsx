@@ -1,15 +1,17 @@
+import { redirect } from "next/navigation";
+
 import { getSession } from "@/server/auth/session";
 import { connectDB } from "@/server/db/client";
 import * as casesService from "@/server/modules/cases/service";
 import { CasesDashboard } from "@/components/cases/cases-dashboard";
 
 export default async function HomePage() {
-  // O middleware (Edge) so garante que existe cookie — a sessao de verdade (JWT valido + usuario
-  // ativo) e resolvida aqui, em Server Component com acesso ao Mongo. `session` nunca deveria ser
-  // null nesta rota (middleware ja redireciona pra /login sem cookie), mas o TS exige o checkout.
+  // O middleware (Edge) ja filtra token com assinatura invalida, mas o usuario pode ter sido
+  // desativado ou o cookie pode ter expirado entre a verificacao de assinatura e esta chamada —
+  // redireciona pro login em vez de renderizar em branco (bug real ja visto: pagina vazia presa).
   const session = await getSession();
   if (!session) {
-    return null;
+    redirect("/login");
   }
 
   const db = await connectDB();

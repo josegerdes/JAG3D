@@ -33,6 +33,7 @@ export interface MeshGroupState {
 
 export type SyncStatus = "synced" | "checking" | "conflict" | "offline";
 export type LicenseStatus = "checking" | "active" | "inactive";
+export type ReliefDirection = "raise" | "indent";
 
 interface EditorState {
   caseId: string | null;
@@ -45,6 +46,7 @@ interface EditorState {
   compareActive: boolean;
   compareMode: "overlay" | "split";
   splitRatio: number;
+  reliefDirection: ReliefDirection;
 
   setCase: (caseId: string | null) => void;
   setAssets: (assets: MeshAssetState[]) => void;
@@ -58,6 +60,7 @@ interface EditorState {
   setCompareActive: (active: boolean) => void;
   setCompareMode: (mode: "overlay" | "split") => void;
   setSplitRatio: (ratio: number) => void;
+  setReliefDirection: (direction: ReliefDirection) => void;
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -71,6 +74,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   compareActive: false,
   compareMode: "overlay",
   splitRatio: 0.5,
+  reliefDirection: "raise",
 
   setCase: (caseId) => set({ caseId }),
   setAssets: (assets) =>
@@ -90,4 +94,5 @@ export const useEditorStore = create<EditorState>((set) => ({
   setCompareActive: (active) => set({ compareActive: active }),
   setCompareMode: (mode) => set({ compareMode: mode }),
   setSplitRatio: (ratio) => set({ splitRatio: ratio }),
+  setReliefDirection: (direction) => set({ reliefDirection: direction }),
 }));

@@ -299,8 +299,14 @@ export default function CaseEditorPage() {
       resultMesh = mesh;
     } else {
       if (strokePointsRef.current.length === 0) return;
-      const brush = buildStrokeBrush(strokePointsRef.current, strokeNormalsRef.current, reliefRadius, "raise");
-      resultMesh = performBooleanOp(mesh, brush, "union");
+      const brush = buildStrokeBrush(
+        strokePointsRef.current,
+        strokeNormalsRef.current,
+        reliefRadius,
+        useEditorStore.getState().reliefDirection
+      );
+      const op = useEditorStore.getState().reliefDirection === "indent" ? "subtract" : "union";
+      resultMesh = performBooleanOp(mesh, brush, op);
       brush.geometry.dispose();
     }
 
