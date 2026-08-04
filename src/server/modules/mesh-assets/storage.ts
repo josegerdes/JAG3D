@@ -23,10 +23,27 @@ export function storageKeyFor(checksum: string, format: MeshFormat): string {
   return path.posix.join(checksum.slice(0, 2), `${checksum}.${format}`);
 }
 
+/**
+ * Grava e depois LE DE VOLTA imediatamente pra confirmar que o arquivo realmente persistiu antes
+ * do upload ser considerado sucesso. Sem isso, um problema de volume/permissao no deploy (write
+ * "silenciosamente" incompleto, ou volume montado como read-only em algum ponto do caminho, ou —
+ * mais sutil ainda — multiplas replicas do container sem volume COMPARTILHADO, onde o proprio
+ * write funciona normal na replica que recebeu o upload mas nenhuma leitura futura bate
+ * necessariamente na mesma replica) so seria descoberto muito depois, na hora de visualizar a
+ * malha — tarde demais pra dar um erro acionavel pro usuario no momento certo (o upload).
+ */
 export async function saveMeshFile(storageKey: string, buffer: Buffer): Promise<void> {
   const fullPath = path.join(storageRoot(), storageKey);
   await fs.mkdir(path.dirname(fullPath), { recursive: true });
   await fs.writeFile(fullPath, buffer);
+
+  const verify = await fs.readFile(fullPath).catch(() => null);
+  if (!verify || !verify.equals(buffer)) {
+    throw new ApiError(
+      500,
+      "Falha ao confirmar a gravacao do arquivo de malha no armazenamento (verifique se o volume de dados esta montado e com permissao de escrita)"
+    );
+  }
 }
 
 /**
