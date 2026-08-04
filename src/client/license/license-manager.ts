@@ -14,6 +14,7 @@ export class LicenseManager {
   private token: string | null = null;
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private listeners = new Set<(licensed: boolean) => void>();
+  private inFlight: Promise<boolean> | null = null;
 
   async start(): Promise<boolean> {
     const licensed = await this.heartbeat();
@@ -34,6 +35,15 @@ export class LicenseManager {
   }
 
   private async heartbeat(): Promise<boolean> {
+    this.inFlight = this.doHeartbeat();
+    try {
+      return await this.inFlight;
+    } finally {
+      this.inFlight = null;
+    }
+  }
+
+  private async doHeartbeat(): Promise<boolean> {
     try {
       const result = await api.post<{ licensed: boolean; capabilityToken: string | null }>("/api/license/heartbeat");
       this.token = result.capabilityToken;
@@ -53,6 +63,11 @@ export class LicenseManager {
   /** Gate local — cada ferramenta chama isso antes de `execute()`. Verificacao criptografica real
    *  (nao so "token existe"), mas so a camada 2: o backstop de verdade e o servidor em save/export. */
   async hasValidToken(): Promise<boolean> {
+    // Se um heartbeat esta em andamento (ex: o usuario clicou numa ferramenta bem na hora em que o
+    // editor estava abrindo, antes do primeiro heartbeat terminar), espera ele em vez de concluir
+    // "sem licenca" prematuramente — sem isso, um heartbeat so um pouco lento (conexao fria com o
+    // Mongo, por exemplo) causava um falso "licenca inativa" logo ao abrir o caso.
+    if (this.inFlight) await this.inFlight;
     if (!this.token) return false;
     const claims = await verifyCapabilityTokenClient(this.token);
     return claims !== null;
